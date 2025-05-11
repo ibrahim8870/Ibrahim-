@@ -1,0 +1,672 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Coffee Cup Calculator</title>
+
+  <!-- Tailwind CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <!-- Font Awesome -->
+  <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.2/css/all.min.css" rel="stylesheet">
+
+  <style>
+    body { background: #f5f5f5; font-family: 'Arial', sans-serif; padding-top: 70px; overflow-x: hidden; }
+    input[type="number"] { width: 5rem; background: #fff; border: 1px solid #ccc; padding: 0.25rem; border-radius: 0.375rem; -webkit-appearance: none; -moz-appearance: textfield; }
+    table { width: 100%; background: #fff; border-collapse: collapse; margin-bottom: 2rem; }
+    th, td { border: 1px solid #e5e7eb; padding: 0.75rem; text-align: center; }
+    th { background: #f1f5f9; }
+    @media print { input, button, .no-print { display: none !important; } body { background: #fff; } }
+    #calculatorModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
+    #calculatorModal.show { display: flex; justify-content: center; align-items: center; }
+    .calculator { background: #fff; padding: 1.5rem; border-radius: 0.5rem; width: 90%; max-width: 320px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .calculator-display { width: 100%; padding: 0.5rem; font-size: 1.5rem; text-align: right; border: 1px solid #ccc; border-radius: 0.25rem; margin-bottom: 0.5rem; }
+    .calculator-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.25rem; }
+    .calculator-buttons button { padding: 0.75rem; font-size: 1rem; border: 1px solid #ccc; border-radius: 0.25rem; background: #f9fafb; cursor: pointer; }
+    .calculator-buttons button:hover { background: #e5e7eb; }
+    .calculator-buttons .operator { background: #3b82f6; color: #fff; }
+    .calculator-buttons .operator:hover { background: #2563eb; }
+    .calculator-buttons .equals { background: #10b981; color: #fff; }
+    .calculator-buttons .equals:hover { background: #059669; }
+    .calculator-buttons .clear { background: #ef4444; color: #fff; }
+    .calculator-buttons .clear:hover { background: #dc2626; }
+    @media (max-width: 640px) {
+      .fixed.top-0 { padding: 0.5rem; }
+      .fixed.top-0 button { font-size: 0.875rem; padding: 0.5rem 1rem; }
+      input[type="number"] { width: 4rem; font-size: 0.875rem; }
+      th, td { padding: 0.5rem; font-size: 0.875rem; }
+      .text-3xl { font-size: 1.5rem; }
+      .text-2xl { font-size: 1.25rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Header with Calculator, Admin, and Reset Buttons -->
+<div class="fixed top-0 left-0 w-full flex justify-end items-center bg-white shadow-md p-3 no-print">
+  <button id="calculatorBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-5 py-2 rounded flex items-center gap-2 mr-2">
+    <i class="fas fa-calculator"></i> Calculator
+  </button>
+  <button id="adminBtn" class="bg-purple-500 hover:bg-purple-600 text-white px-5 py-2 rounded flex items-center gap-2 mr-2">
+    <i class="fas fa-cog"></i> Admin
+  </button>
+  <button id="resetBtn" class="bg-red-500 hover:bg-red-600 text-white px-5 py-2 rounded flex items-center gap-2">
+    <i class="fas fa-undo"></i> Reset
+  </button>
+</div>
+
+<!-- Calculator Modal -->
+<div id="calculatorModal" class="no-print">
+  <div class="calculator">
+    <input type="text" class="calculator-display" id="calculatorDisplay" readonly value="0">
+    <div class="calculator-buttons">
+      <button class="clear" onclick="clearCalculator()">C</button>
+      <button onclick="appendToDisplay('(')">(</button>
+      <button onclick="appendToDisplay(')')">)</button>
+      <button class="operator" onclick="appendToDisplay('/')">÷</button>
+      <button onclick="appendToDisplay('7')">7</button>
+      <button onclick="appendToDisplay('8')">8</button>
+      <button onclick="appendToDisplay('9')">9</button>
+      <button class="operator" onclick="appendToDisplay('*')">×</button>
+      <button onclick="appendToDisplay('4')">4</button>
+      <button onclick="appendToDisplay('5')">5</button>
+      <button onclick="appendToDisplay('6')">6</button>
+      <button class="operator" onclick="appendToDisplay('-')">-</button>
+      <button onclick="appendToDisplay('1')">1</button>
+      <button onclick="appendToDisplay('2')">2</button>
+      <button onclick="appendToDisplay('3')">3</button>
+      <button class="operator" onclick="appendToDisplay('+')">+</button>
+      <button onclick="appendToDisplay('0')">0</button>
+      <button onclick="appendToDisplay('.')">.</button>
+      <button onclick="calculatePercentage()">%</button>
+      <button class="equals" onclick="calculate()">=</button>
+    </div>
+    <button class="mt-4 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded w-full" onclick="closeCalculatorModal()">Close</button>
+  </div>
+</div>
+
+<!-- Main Page -->
+<main id="mainPage" class="max-w-4xl mx-auto p-4">
+  <h1 class="text-3xl font-bold mb-6">Coffee Cup Calculator</h1>
+
+  <!-- Regular Coffee Cup -->
+  <section class="mb-8">
+    <h2 class="text-2xl font-bold text-blue-600 mb-3">☕ Coffee Cup</h2>
+    <div class="overflow-x-auto">
+      <table>
+        <thead>
+          <tr><th>Size</th><th>Col1</th><th>Col2</th><th>Col3</th><th>Multiplier</th><th>Total</th></tr>
+        </thead>
+        <tbody id="regular-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Cappuccino Cup -->
+  <section class="mb-8">
+    <h2 class="text-2xl font-bold text-pink-600 mb-3">☕ Cappuccino Cup</h2>
+    <div class="overflow-x-auto">
+      <table>
+        <thead>
+          <tr><th>Size</th><th>Col1</th><th>Col2</th><th>Col3</th><th>Multiplier</th><th>Total</th></tr>
+        </thead>
+        <tbody id="cappuccino-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Cold Coffee Cup -->
+  <section class="mb-8">
+    <h2 class="text-2xl font-bold text-indigo-600 mb-3">❄️ Cold Coffee Cup</h2>
+    <div class="overflow-x-auto">
+      <table>
+        <thead>
+          <tr><th>Size</th><th>Col1</th><th>Col2</th><th>Col3</th><th>Multiplier</th><th>Total</th></tr>
+        </thead>
+        <tbody id="cold-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Express Cup -->
+  <section class="mb-8">
+    <h2 class="text-2xl font-bold text-green-600 mb-3">⚡ Express Cup</h2>
+    <div class="overflow-x-auto">
+      <table>
+        <thead>
+          <tr><th>Quantity 1</th><th>Quantity 2</th><th>Total</th></tr>
+        </thead>
+        <tbody id="express-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Karak Cup -->
+  <section class="mb-8">
+    <h2 class="text-2xl font-bold text-orange-600 mb-3">🫖 Karak Cup</h2>
+    <div class="overflow-x-auto">
+      <table>
+        <thead>
+          <tr><th>Quantity 1</th><th>Quantity 2</th><th>Total</th></tr>
+        </thead>
+        <tbody id="karak-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Others Product Section -->
+  <section id="others-section" class="hidden mb-8">
+    <h2 class="text-2xl font-bold text-yellow-700 mb-3">🧃 Other Products</h2>
+    <div class="overflow-x-auto">
+      <table>
+        <thead>
+          <tr><th>Product</th><th>Qty A</th><th>Qty B</th><th>Total</th></tr>
+        </thead>
+        <tbody id="other-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="flex justify-center mb-8">
+    <button id="nextBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full text-lg">Next</button>
+  </div>
+</main>
+
+<!-- Admin Page -->
+<section id="adminPage" class="hidden max-w-4xl mx-auto p-4">
+  <h1 class="text-3xl font-bold mb-6">Admin Settings - Multiplier Configuration</h1>
+
+  <!-- Regular Coffee Multipliers -->
+  <section class="mb-8">
+    <h2 class="text-2xl font-bold text-blue-600 mb-3">☕ Coffee Cup Multipliers</h2>
+    <div class="overflow-x-auto">
+      <table>
+        <thead>
+          <tr><th>Size</th><th>Multiplier</th></tr>
+        </thead>
+        <tbody id="admin-regular-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Cappuccino Multipliers -->
+  <section class="mb-8">
+    <h2 class="text-2xl font-bold text-pink-600 mb-3">☕ Cappuccino Cup Multipliers</h2>
+    <div class="overflow-x-auto">
+      <table>
+        <thead>
+          <tr><th>Size</th><th>Multiplier</th></tr>
+        </thead>
+        <tbody id="admin-cappuccino-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Cold Coffee Multipliers -->
+  <section class="mb-8">
+    <h2 class="text-2xl font-bold text-indigo-600 mb-3">❄️ Cold Coffee Cup Multipliers</h2>
+    <div class="overflow-x-auto">
+      <table>
+        <thead>
+          <tr><th>Size</th><th>Multiplier</th></tr>
+        </thead>
+        <tbody id="admin-cold-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="flex justify-center gap-4 mb-8">
+    <button id="saveAdminBtn" class="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-full text-lg">Save Settings</button>
+    <button id="backBtn" class="bg-gray-600 hover:bg-gray-700 text-white px-8 py-3 rounded-full text-lg">Back</button>
+  </div>
+</section>
+
+<!-- WhatsApp Button -->
+<div class="fixed bottom-5 right-5 no-print">
+  <button id="whatsappBtn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-full flex items-center gap-3 shadow-lg text-lg">
+    <i class="fab fa-whatsapp"></i> WhatsApp Order
+  </button>
+</div>
+
+<script>
+const STORAGE_KEY = "coffee_calculator_full";
+const MULTIPLIER_STORAGE_KEY = "coffee_multipliers";
+
+const coffeeSections = [
+  { name: 'regular', label: 'Coffee Cup', sizes: [{size:'S',multiplier:25},{size:'M',multiplier:15},{size:'L',multiplier:25},{size:'XL',multiplier:15}] },
+  { name: 'cappuccino', label: 'Cappuccino Cup', sizes: [{size:'S',multiplier:25},{size:'M',multiplier:25},{size:'L',multiplier:15}] },
+  { name: 'cold', label: 'Cold Coffee Cup', sizes: [{size:'S',multiplier:25},{size:'M',multiplier:15},{size:'L',multiplier:25},{size:'XL',multiplier:15}] }
+];
+const otherProducts = ["Nova Water", "Even Water", "Donut", "Munchkins", "Coffee Roll", "Croissant", "English Cake", "Muffin"];
+
+// Calculator Functions
+function openCalculatorModal() {
+  try {
+    document.getElementById('calculatorModal').classList.add('show');
+  } catch (e) {
+    console.error('Error opening calculator modal:', e);
+  }
+}
+
+function closeCalculatorModal() {
+  try {
+    document.getElementById('calculatorModal').classList.remove('show');
+  } catch (e) {
+    console.error('Error closing calculator modal:', e);
+  }
+}
+
+function clearCalculator() {
+  try {
+    document.getElementById('calculatorDisplay').value = '0';
+  } catch (e) {
+    console.error('Error clearing calculator:', e);
+  }
+}
+
+function appendToDisplay(value) {
+  try {
+    const display = document.getElementById('calculatorDisplay');
+    if (display.value === '0' && value !== '.') {
+      display.value = value;
+    } else {
+      display.value += value;
+    }
+  } catch (e) {
+    console.error('Error appending to display:', e);
+  }
+}
+
+function calculatePercentage() {
+  try {
+    const display = document.getElementById('calculatorDisplay');
+    const value = eval(display.value);
+    if (!isNaN(value)) {
+      display.value = (value / 100).toString();
+    } else {
+      display.value = 'Error';
+    }
+  } catch (e) {
+    console.error('Error calculating percentage:', e);
+    document.getElementById('calculatorDisplay').value = 'Error';
+  }
+}
+
+function calculate() {
+  try {
+    const display = document.getElementById('calculatorDisplay');
+    const result = eval(display.value);
+    if (!isNaN(result)) {
+      display.value = Number(result.toFixed(2));
+    } else {
+      display.value = 'Error';
+    }
+  } catch (e) {
+    console.error('Error calculating:', e);
+    document.getElementById('calculatorDisplay').value = 'Error';
+  }
+}
+
+// Load saved multipliers from localStorage
+function loadMultipliers() {
+  try {
+    const savedMultipliers = JSON.parse(localStorage.getItem(MULTIPLIER_STORAGE_KEY) || "null");
+    if (savedMultipliers) {
+      coffeeSections.forEach(section => {
+        section.sizes.forEach((size, idx) => {
+          if (savedMultipliers[section.name] && savedMultipliers[section.name][idx]) {
+            size.multiplier = savedMultipliers[section.name][idx].multiplier;
+          }
+        });
+      });
+    }
+  } catch (e) {
+    console.error('Error loading multipliers:', e);
+  }
+}
+
+// Save multipliers to localStorage
+function saveMultipliers() {
+  try {
+    const multipliers = {
+      regular: coffeeSections[0].sizes.map(size => ({ size: size.size, multiplier: size.multiplier })),
+      cappuccino: coffeeSections[1].sizes.map(size => ({ size: size.size, multiplier: size.multiplier })),
+      cold: coffeeSections[2].sizes.map(size => ({ size: size.size, multiplier: size.multiplier }))
+    };
+    localStorage.setItem(MULTIPLIER_STORAGE_KEY, JSON.stringify(multipliers));
+  } catch (e) {
+    console.error('Error saving multipliers:', e);
+  }
+}
+
+function defaultData() {
+  return {
+    regular: coffeeSections[0].sizes.map(()=>({ col1:'',col2:'',col3:'',multiplier:coffeeSections[0].sizes[0].multiplier,total:0 })),
+    cappuccino: coffeeSections[1].sizes.map(()=>({ col1:'',col2:'',col3:'',multiplier:coffeeSections[1].sizes[0].multiplier,total:0 })),
+    cold: coffeeSections[2].sizes.map(()=>({ col1:'',col2:'',col3:'',multiplier:coffeeSections[2].sizes[0].multiplier,total:0 })),
+    express: [{ qty1: '', qty2: '', total: 0 }],
+    karak: [{ qty1: '', qty2: '', total: 0 }],
+    other: otherProducts.map(()=>({ a:'', b:'', total:0 }))
+  };
+}
+
+let localData = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null") || defaultData();
+
+// Load multipliers on page load
+loadMultipliers();
+
+function renderAll() {
+  try {
+    renderTable('regular','regular-tbody', coffeeSections[0].sizes);
+    renderTable('cappuccino','cappuccino-tbody', coffeeSections[1].sizes);
+    renderTable('cold','cold-tbody', coffeeSections[2].sizes);
+    renderSimpleTable('express','express-tbody');
+    renderSimpleTable('karak','karak-tbody');
+    renderOtherProducts();
+  } catch (e) {
+    console.error('Error rendering tables:', e);
+  }
+}
+
+function renderTable(section, tbodyId, sizes) {
+  try {
+    const tbody = document.getElementById(tbodyId);
+    tbody.innerHTML = '';
+    sizes.forEach((size, idx) => {
+      const data = localData[section][idx];
+      const total = (parseFloat(data.col1)||0) + (parseFloat(data.col2)||0)*(parseFloat(size.multiplier)||1) + (parseFloat(data.col3)||0);
+      localData[section][idx].total = total;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${size.size}</td>
+        <td><input type="number" value="${data.col1}" data-section="${section}" data-index="${idx}" data-field="col1"></td>
+        <td><input type="number" value="${data.col2}" data-section="${section}" data-index="${idx}" data-field="col2"></td>
+        <td><input type="number" value="${data.col3}" data-section="${section}" data-index="${idx}" data-field="col3"></td>
+        <td><input type="number" value="${size.multiplier}" data-section="${section}" data-index="${idx}" data-field="multiplier" readonly></td>
+        <td class="font-bold text-blue-700">${total.toFixed(2)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    console.error(`Error rendering table ${section}:`, e);
+  }
+}
+
+function renderSimpleTable(section, tbodyId) {
+  try {
+    const tbody = document.getElementById(tbodyId);
+    tbody.innerHTML = '';
+    const data = localData[section][0];
+    const total = (parseFloat(data.qty1)||0) + (parseFloat(data.qty2)||0);
+    localData[section][0].total = total;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="number" value="${data.qty1 || ''}" data-section="${section}" data-index="0" data-field="qty1" class="mb-2"></td>
+      <td><input type="number" value="${data.qty2 || ''}" data-section="${section}" data-index="0" data-field="qty2"></td>
+      <td class="font-bold text-green-700">${total.toFixed(2)}</td>
+    `;
+    tbody.appendChild(tr);
+  } catch (e) {
+    console.error(`Error rendering simple table ${section}:`, e);
+  }
+}
+
+function renderOtherProducts() {
+  try {
+    const tbody = document.getElementById('other-tbody');
+    tbody.innerHTML = '';
+    otherProducts.forEach((prod, idx) => {
+      const data = localData.other[idx];
+      const total = (parseFloat(data.a)||0)+(parseFloat(data.b)||0);
+      localData.other[idx].total = total;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${prod}</td>
+        <td><input type="number" value="${data.a}" data-section="other" data-index="${idx}" data-field="a"></td>
+        <td><input type="number" value="${data.b}" data-section="other" data-index="${idx}" data-field="b"></td>
+        <td class="font-bold text-yellow-700">${total.toFixed(2)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    console.error('Error rendering other products:', e);
+  }
+}
+
+function renderAdminPage() {
+  try {
+    coffeeSections.forEach(section => {
+      const tbody = document.getElementById(`admin-${section.name}-tbody`);
+      tbody.innerHTML = '';
+      section.sizes.forEach((size, idx) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${size.size}</td>
+          <td><input type="number" value="${size.multiplier}" data-section="${section.name}" data-index="${idx}" data-field="multiplier" step="0.01"></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    });
+  } catch (e) {
+    console.error('Error rendering admin page:', e);
+  }
+}
+
+function updateTotal(section, idx) {
+  try {
+    const data = localData[section][idx];
+    let total = 0;
+
+    if (section === 'regular' || section === 'cappuccino' || section === 'cold') {
+      const multiplier = coffeeSections.find(sec => sec.name === section).sizes[idx].multiplier;
+      total = (parseFloat(data.col1) || 0) + (parseFloat(data.col2) || 0) * (parseFloat(multiplier) || 1) + (parseFloat(data.col3) || 0);
+      localData[section][idx].total = total;
+      const tbody = document.getElementById(`${section}-tbody`);
+      const row = tbody.children[idx];
+      if (row) {
+        row.querySelector('td:last-child').textContent = total.toFixed(2);
+      }
+    } else if (section === 'express' || section === 'karak') {
+      total = (parseFloat(data.qty1) || 0) + (parseFloat(data.qty2) || 0);
+      localData[section][idx].total = total;
+      const tbody = document.getElementById(`${section}-tbody`);
+      const row = tbody.children[idx];
+      if (row) {
+        row.querySelector('td:last-child').textContent = total.toFixed(2);
+      }
+    } else if (section === 'other') {
+      total = (parseFloat(data.a) || 0) + (parseFloat(data.b) || 0);
+      localData[section][idx].total = total;
+      const tbody = document.getElementById('other-tbody');
+      const row = tbody.children[idx];
+      if (row) {
+        row.querySelector('td:last-child').textContent = total.toFixed(2);
+      }
+    }
+  } catch (e) {
+    console.error(`Error updating total for ${section}:`, e);
+  }
+}
+
+function formatNumber(num) {
+  try {
+    if (Number.isInteger(num)) {
+      return num.toString();
+    }
+    return parseFloat(num.toFixed(2)).toString();
+  } catch (e) {
+    console.error('Error formatting number:', e);
+    return num.toString();
+  }
+}
+
+document.body.addEventListener('input', function(e) {
+  if (e.target.matches('input[type="number"]')) {
+    try {
+      const section = e.target.dataset.section;
+      const idx = +e.target.dataset.index;
+      const field = e.target.dataset.field;
+      const value = e.target.value;
+
+      // ফোকাস ধরে রাখা
+      const activeInput = document.activeElement;
+
+      // অ্যাডমিন পেজে মাল্টিপ্লায়ার আপডেট
+      if (e.target.closest('#adminPage')) {
+        coffeeSections.find(sec => sec.name === section).sizes[idx].multiplier = parseFloat(value) || 0;
+      } else {
+        // মূল পেজে ডেটা আপডেট
+        localData[section][idx][field] = value;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(localData));
+        updateTotal(section, idx);
+      }
+
+      // ফোকাস পুনরায় সেট
+      setTimeout(() => activeInput.focus(), 0);
+    } catch (e) {
+      console.error('Error handling input:', e);
+    }
+  }
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+  try {
+    document.getElementById('calculatorBtn').addEventListener('click', openCalculatorModal);
+
+    document.getElementById('resetBtn').addEventListener('click', function() {
+      if (confirm('Reset all data?')) {
+        console.log('Resetting all data...');
+        localStorage.removeItem(STORAGE_KEY);
+        localData = defaultData();
+        renderAll();
+      }
+    });
+
+    document.getElementById('nextBtn').addEventListener('click', function() {
+      document.getElementById('others-section').classList.remove('hidden');
+      this.style.display = 'none';
+    });
+
+    document.getElementById('adminBtn').addEventListener('click', function() {
+      document.getElementById('mainPage').classList.add('hidden');
+      document.getElementById('adminPage').classList.remove('hidden');
+      renderAdminPage();
+    });
+
+    document.getElementById('backBtn').addEventListener('click', function() {
+      document.getElementById('adminPage').classList.add('hidden');
+      document.getElementById('mainPage').classList.remove('hidden');
+      renderAll();
+    });
+
+    document.getElementById('saveAdminBtn').addEventListener('click', function() {
+      saveMultipliers();
+      alert('Settings saved successfully!');
+      renderAll();
+      document.getElementById('adminPage').classList.add('hidden');
+      document.getElementById('mainPage').classList.remove('hidden');
+    });
+
+    document.getElementById('whatsappBtn').addEventListener('click', function() {
+      try {
+        let message = '🛒 *Coffee Order Details* 🛒\n\n';
+
+        coffeeSections.forEach(section => {
+          const secData = localData[section.name];
+          let hasItems = false;
+          let sectionMessage = `*${section.label}*\n`;
+          secData.forEach((item, idx) => {
+            if (item.total > 0) {
+              sectionMessage += `  Size ${section.sizes[idx].size}: ${formatNumber(item.total)}\n`;
+              hasItems = true;
+            }
+          });
+          if (hasItems) {
+            message += sectionMessage + '\n';
+          }
+        });
+
+        const expressData = localData.express[0];
+        const expressTotal = (parseFloat(expressData.qty1) || 0) + (parseFloat(expressData.qty2) || 0);
+        if (expressTotal > 0) {
+          message += '*Express Cup*\n';
+          message += `  Total: ${formatNumber(expressTotal)}\n\n`;
+        }
+
+        const karakData = localData.karak[0];
+        const karakTotal = (parseFloat(karakData.qty1) || 0) + (parseFloat(karakData.qty2) || 0);
+        if (karakTotal > 0) {
+          message += '*Karak Cup*\n';
+          message += `  Total: ${formatNumber(karakTotal)}\n\n`;
+        }
+
+        const otherData = localData.other;
+        let hasOtherItems = false;
+        let otherMessage = '*Other Products*\n';
+        otherData.forEach((item, idx) => {
+          const total = (parseFloat(item.a) || 0) + (parseFloat(item.b) || 0);
+          if (total > 0) {
+            otherMessage += `  ${otherProducts[idx]}: ${formatNumber(total)}\n`;
+            hasOtherItems = true;
+          }
+        });
+        if (hasOtherItems) {
+          message += otherMessage + '\n';
+        }
+
+        message += '✅ Thank you for your order!';
+        
+        window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+      } catch (e) {
+        console.error('Error generating WhatsApp message:', e);
+        alert('Error generating WhatsApp message. Please try again.');
+      }
+    });
+
+    renderAll();
+  } catch (e) {
+    console.error('Error initializing page:', e);
+  }
+});
+</script>
+</body>
+</html>
